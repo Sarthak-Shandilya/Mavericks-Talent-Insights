@@ -1,0 +1,50 @@
+# --- API ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.0.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.9
+email-validator>=2.0.0
+
+# --- Database (PostgreSQL + migrations) ---
+sqlalchemy>=2.0.36
+alembic>=1.14.0
+psycopg2-binary>=2.9.10
+asyncpg>=0.30.0
+
+# --- Auth / security ---
+PyJWT>=2.9.0
+bcrypt>=4.0.1
+cryptography>=43.0.0
+
+# --- Excel bulk upload & validation (BRD) ---
+openpyxl>=3.1.5
+pandas>=2.2.0
+python-dateutil>=2.9.0
+
+# --- Reports export ---
+reportlab>=4.2.0
+Jinja2>=3.1.4
+
+# --- Caching & rate limits (dashboards / API) ---
+redis>=5.2.0
+slowapi>=0.1.9
+
+# --- Azure (Blob uploads, Service Bus, optional integration) ---
+azure-storage-blob>=12.24.0
+azure-servicebus>=7.13.0
+azure-identity>=1.19.0
+
+# --- HTTP client & OpenAI / LLM layer ---
+httpx>=0.28.0
+openai>=1.57.0
+
+# --- pgvector (optional: embeddings in Postgres) ---
+pgvector>=0.3.6
+
+# --- Observability (structured logs; optional App Insights bridge later) ---
+structlog>=24.4.0
+
+# --- Dev / tests (httpx above: TestClient / async client) ---
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
