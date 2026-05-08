@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+
+def upsert_trainees(db: Session, rows: list[dict]) -> None:
+    if not rows:
+        return
+    stmt = text(
+        """
+        INSERT INTO trainees (
+            employee_id, superset_id, doj, full_name, gender, email, phone,
+            college_name, college_city, college_state, base_location, current_training_location,
+            training_status, stream_id, current_training_stage_id, category, assigned_competency, batch_id, is_active
+        ) VALUES (
+            :employee_id, :superset_id, :doj, :full_name, :gender, :email, :phone,
+            :college_name, :college_city, :college_state, :base_location, :current_training_location,
+            :training_status, :stream_id, :current_training_stage_id, :category, :assigned_competency, :batch_id, true
+        )
+        ON CONFLICT (employee_id) DO UPDATE SET
+            superset_id = EXCLUDED.superset_id,
+            doj = EXCLUDED.doj,
+            full_name = EXCLUDED.full_name,
+            gender = EXCLUDED.gender,
+            email = EXCLUDED.email,
+            phone = EXCLUDED.phone,
+            college_name = EXCLUDED.college_name,
+            college_city = EXCLUDED.college_city,
+            college_state = EXCLUDED.college_state,
+            base_location = EXCLUDED.base_location,
+            current_training_location = EXCLUDED.current_training_location,
+            training_status = EXCLUDED.training_status,
+            stream_id = EXCLUDED.stream_id,
+            current_training_stage_id = EXCLUDED.current_training_stage_id,
+            category = EXCLUDED.category,
+            assigned_competency = EXCLUDED.assigned_competency,
+            batch_id = EXCLUDED.batch_id,
+            is_active = true,
+            updated_at = now()
+        """
+    )
+    db.execute(stmt, rows)
+
+
+def upsert_assessments(db: Session, rows: list[dict]) -> None:
+    if not rows:
+        return
+    stmt = text(
+        """
+        INSERT INTO assessments (
+            trainee_id, program, assessment_code, attempt_no, score, max_score, assessment_date, remarks
+        ) VALUES (
+            :trainee_id, :program, :assessment_code, :attempt_no, :score, :max_score, :assessment_date, :remarks
+        )
+        ON CONFLICT (trainee_id, assessment_code, attempt_no) DO UPDATE SET
+            program = EXCLUDED.program,
+            score = EXCLUDED.score,
+            max_score = EXCLUDED.max_score,
+            assessment_date = EXCLUDED.assessment_date,
+            remarks = EXCLUDED.remarks,
+            updated_at = now()
+        """
+    )
+    db.execute(stmt, rows)
+
+
+def upsert_stages(db: Session, rows: list[dict]) -> None:
+    if not rows:
+        return
+    stmt = text(
+        """
+        INSERT INTO training_stages (
+            trainee_id, stage_type_id, status, score, attempts, completion_date, updated_by_user_id
+        ) VALUES (
+            :trainee_id, :stage_type_id, :status, :score, :attempts, :completion_date, :updated_by_user_id
+        )
+        ON CONFLICT (trainee_id, stage_type_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            score = EXCLUDED.score,
+            attempts = EXCLUDED.attempts,
+            completion_date = EXCLUDED.completion_date,
+            updated_by_user_id = EXCLUDED.updated_by_user_id,
+            updated_at = now()
+        """
+    )
+    db.execute(stmt, rows)
+
+
+def upsert_competencies(db: Session, rows: list[dict]) -> None:
+    if not rows:
+        return
+    stmt = text(
+        """
+        INSERT INTO trainee_competencies (
+            trainee_id, competency_name, status, skill_level, readiness_flag, completion_date
+        ) VALUES (
+            :trainee_id, :competency_name, :status, :skill_level, :readiness_flag, :completion_date
+        )
+        ON CONFLICT (trainee_id, competency_name) DO UPDATE SET
+            status = EXCLUDED.status,
+            skill_level = EXCLUDED.skill_level,
+            readiness_flag = EXCLUDED.readiness_flag,
+            completion_date = EXCLUDED.completion_date,
+            updated_at = now()
+        """
+    )
+    db.execute(stmt, rows)

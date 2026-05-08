@@ -29,6 +29,26 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str | None = "System Administrator"
 
+    # Upload + ingestion configuration
+    queue_type: str = "in_memory"  # in_memory | activemq | service_bus
+    queue_name_ingestion: str = "ingestion-uploads"
+    queue_name_ingestion_completed: str = "ingestion-completed"
+
+    activemq_host: str = "localhost"
+    activemq_port: int = 61613
+    activemq_user: str = ""
+    activemq_password: str = ""
+    activemq_destination_prefix: str = "/queue/"
+
+    service_bus_connection_string: str = ""
+
+    storage_type: str = "local"  # local | azure_blob
+    local_storage_dir: str = "./uploads"
+    azure_blob_connection_string: str = ""
+    azure_blob_container: str = "mavericks-uploads"
+
+    upload_max_file_size_mb: int = 25
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

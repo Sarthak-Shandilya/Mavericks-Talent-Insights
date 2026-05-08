@@ -2,6 +2,7 @@
 
 from apis.auth import router as auth_router
 from apis.health import router as health_router
+from apis.uploads import router as uploads_router
 from apis.users import router as users_router
 
-__all__ = ["auth_router", "health_router", "users_router"]
+__all__ = ["auth_router", "health_router", "uploads_router", "users_router"]

@@ -1,0 +1,14 @@
+# --- Core ---
+sqlalchemy>=2.0.36
+psycopg2-binary>=2.9.10
+pydantic>=2.0.0
+pydantic-settings>=2.6.0
+
+# --- Excel ingestion ---
+openpyxl>=3.1.5
+
+# --- Queue + storage adapters ---
+azure-core>=1.32.0
+azure-storage-blob>=12.24.0
+azure-servicebus>=7.13.0
+stomp.py>=8.1.2

@@ -17,6 +17,7 @@ class UploadBatch(Base):
     upload_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     file_name: Mapped[str] = mapped_column(String(512), nullable=False)
     blob_url: Mapped[str] = mapped_column(Text, nullable=False)
+    file_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     success_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
