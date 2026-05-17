@@ -10,6 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from configs.settings import get_settings
+from configs.upload_template_headers import (
+    ASSESSMENTS_HEADERS,
+    COMPETENCY_HEADERS,
+    STAGES_HEADERS,
+    TRAINEE_MASTER_HEADERS,
+)
 from models.enums import UploadStatus, UploadType
 from models.upload_audit import UploadBatch
 from models.user import User
@@ -119,52 +125,10 @@ def get_upload(db: Session, upload_id: uuid.UUID) -> UploadBatch | None:
 
 def build_template(upload_type: UploadType) -> tuple[str, bytes]:
     headers_by_type = {
-        UploadType.TRAINEE_MASTER: [
-            "employee_id",
-            "superset_id",
-            "doj",
-            "full_name",
-            "gender",
-            "email",
-            "phone",
-            "college_name",
-            "college_city",
-            "college_state",
-            "base_location",
-            "current_training_location",
-            "training_status",
-            "stream_code",
-            "current_training_stage_code",
-            "category",
-            "assigned_competency",
-            "batch_code",
-        ],
-        UploadType.ASSESSMENTS: [
-            "employee_id",
-            "program",
-            "assessment_code",
-            "attempt_no",
-            "score",
-            "max_score",
-            "assessment_date",
-            "remarks",
-        ],
-        UploadType.STAGES: [
-            "employee_id",
-            "stage_code",
-            "status",
-            "score",
-            "attempts",
-            "completion_date",
-        ],
-        UploadType.COMPETENCY: [
-            "employee_id",
-            "competency_name",
-            "status",
-            "skill_level",
-            "readiness_flag",
-            "completion_date",
-        ],
+        UploadType.TRAINEE_MASTER: list(TRAINEE_MASTER_HEADERS),
+        UploadType.ASSESSMENTS: list(ASSESSMENTS_HEADERS),
+        UploadType.STAGES: list(STAGES_HEADERS),
+        UploadType.COMPETENCY: list(COMPETENCY_HEADERS),
     }
     workbook = Workbook()
     sheet = workbook.active

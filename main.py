@@ -13,7 +13,10 @@ from configs.settings import get_settings
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from services.bootstrap import maybe_bootstrap_admin
+    from utils.database import engine
+    from utils.sqlite_schema import prepare_sqlite_for_dev
 
+    prepare_sqlite_for_dev(engine)
     maybe_bootstrap_admin()
     yield
     from utils.database import engine

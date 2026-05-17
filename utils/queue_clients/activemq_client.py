@@ -1,3 +1,5 @@
+"""STOMP client for Apache ActiveMQ — used when settings.queue_type == \"generic\"."""
+
 from __future__ import annotations
 
 import json

@@ -64,3 +64,19 @@ class CompetencyRow(BaseModel):
     skill_level: str = Field(min_length=1, max_length=32)
     readiness_flag: bool = False
     completion_date: date | None = None
+
+    @field_validator("readiness_flag", mode="before")
+    @classmethod
+    def coerce_readiness_flag(cls, value: object) -> bool:
+        if value is None or value == "":
+            return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        text = str(value).strip().lower()
+        if text in ("yes", "y", "true", "1", "t"):
+            return True
+        if text in ("no", "n", "false", "0", "f", "na", "n/a"):
+            return False
+        raise ValueError(f"Readiness must be Yes/No or true/false (got {value!r})")

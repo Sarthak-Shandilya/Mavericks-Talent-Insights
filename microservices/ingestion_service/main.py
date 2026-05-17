@@ -3,23 +3,54 @@ from __future__ import annotations
 import json
 import logging
 
+from sqlalchemy.engine.url import make_url
+
 from configs.settings import get_settings
+from db.session import engine
 from processors import process_upload
 from utils.queue_clients import get_queue_client
+from utils.sqlite_schema import ensure_sqlite_schema_alignment, warn_if_sqlite_missing_core_tables
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 logger = logging.getLogger("ingestion-service")
 
 
+def _safe_database_url(url: str) -> str:
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<invalid DATABASE_URL>"
+
+
 def _handler(message: dict) -> None:
-    logger.info("Received upload message: %s", json.dumps(message))
-    process_upload(message)
-    logger.info("Completed upload_id=%s", message.get("upload_id"))
+    uid = message.get("upload_id")
+    logger.info("queue: handler invoked upload_id=%s raw_keys=%s", uid, list(message.keys()))
+    logger.debug("queue: full message %s", json.dumps(message))
+    try:
+        process_upload(message)
+        logger.info("queue: handler OK upload_id=%s", uid)
+    except Exception:
+        logger.exception("queue: handler ERROR upload_id=%s", uid)
+        raise
 
 
 def main() -> None:
     settings = get_settings()
-    logger.info("Starting ingestion worker with queue_type=%s", settings.queue_type)
+    ensure_sqlite_schema_alignment(engine)
+    warn_if_sqlite_missing_core_tables(engine)
+    logger.info(
+        "worker boot queue_type=%s queue_in=%s queue_done=%s storage=%s local_dir=%s db=%s",
+        settings.queue_type,
+        settings.queue_name_ingestion,
+        settings.queue_name_ingestion_completed,
+        settings.storage_type,
+        settings.local_storage_dir,
+        _safe_database_url(settings.database_url),
+    )
+    logger.info("worker: connecting queue consumer…")
     queue = get_queue_client()
     queue.consume(queue_name=settings.queue_name_ingestion, handler=_handler)
 

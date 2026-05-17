@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator
 from datetime import date, datetime
 from io import BytesIO
 
 from openpyxl import load_workbook
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_header(value: object) -> str:
@@ -30,13 +33,16 @@ def _normalize_value(value: object) -> object:
 
 
 def iter_rows(file_bytes: bytes) -> Iterator[tuple[int, dict[str, object]]]:
+    logger.info("excel_reader: load_workbook read_only bytes=%s", len(file_bytes))
     workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
     sheet = workbook.active
     rows_iter = sheet.iter_rows(values_only=True)
     header_row = next(rows_iter, None)
     if not header_row:
+        logger.warning("excel_reader: empty sheet (no header row)")
         return
     headers = [_normalize_header(col) for col in header_row]
+    logger.info("excel_reader: headers count=%s sample=%s", len(headers), headers[:8])
     for index, values in enumerate(rows_iter, start=2):
         row = {
             headers[i]: _normalize_value(values[i]) if i < len(values) else None

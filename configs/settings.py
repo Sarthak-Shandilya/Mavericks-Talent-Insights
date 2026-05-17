@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     bootstrap_admin_password: str | None = None
     bootstrap_admin_full_name: str | None = "System Administrator"
 
-    # Upload + ingestion configuration
-    queue_type: str = "in_memory"  # in_memory | activemq | service_bus
+    # Upload + ingestion: generic = ActiveMQ (STOMP); service_bus = Azure Service Bus
+    queue_type: str = "generic"
     queue_name_ingestion: str = "ingestion-uploads"
     queue_name_ingestion_completed: str = "ingestion-completed"
 

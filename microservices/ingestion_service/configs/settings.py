@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./mavericks.db"
 
-    queue_type: str = "in_memory"
+    queue_type: str = "generic"
     queue_name_ingestion: str = "ingestion-uploads"
     queue_name_ingestion_completed: str = "ingestion-completed"
     service_bus_connection_string: str = ""
