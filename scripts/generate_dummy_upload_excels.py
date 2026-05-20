@@ -9,7 +9,7 @@ Output: fixtures/upload_samples/*.xlsx
 from __future__ import annotations
 
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -59,47 +59,30 @@ def main() -> None:
 
     # --- TRAINEE_MASTER (same headers as GET /uploads/templates/TRAINEE_MASTER) ---
     trainee_headers = list(TRAINEE_MASTER_HEADERS)
-    trainee_rows: list[list[object]] = [
+    _base_date = date(2026, 1, 1)
+    # Generate 500 records for TRAINEE_MASTER with valid dates
+    trainee_rows = [
         [
-            "EMP-DEMO-001",
-            "SUP-10001",
-            date(2026, 1, 15),
-            "Asha Verma",
-            "F",
-            "asha.verma.demo@example.com",
-            "9876500001",
-            "ABC Institute of Tech",
-            "Pune",
-            "Maharashtra",
-            "Mumbai",
-            "Mumbai",
+            f"EMP-DEMO-{i:03}",
+            f"SUP-100{i:02}",
+            _base_date + timedelta(days=(i - 1)),
+            f"Trainee {i}",
+            "M" if i % 2 == 0 else "F",
+            f"trainee{i:03}@example.com",
+            f"9876500{i:03}",
+            "Institute of Tech",
+            "City",
+            "State",
+            "Region",
+            "Region",
             "ACTIVE",
-            "JAVA",
-            "FOUNDATION",
+            "JAVA" if i % 3 == 0 else "DATA",
+            "FOUNDATION" if i % 2 == 0 else "SPARK",
             "Fresher",
-            "Java Backend Track",
+            "Track",
             "",
-        ],
-        [
-            "EMP-DEMO-002",
-            "SUP-10002",
-            date(2026, 1, 20),
-            "Rohan Mehta",
-            "M",
-            "rohan.mehta.demo@example.com",
-            "9876500002",
-            "XYZ College",
-            "Bangalore",
-            "Karnataka",
-            "Bangalore",
-            "Bangalore",
-            "ACTIVE",
-            "DATA",
-            "SPARK",
-            "Fresher",
-            "Data Engineering Track",
-            "",
-        ],
+        ]
+        for i in range(1, 501)
     ]
     _safe_write(OUT_DIR / "trainee_master_sample.xlsx", trainee_headers, trainee_rows)
 

@@ -214,6 +214,7 @@ def process_upload(message: dict[str, Any]) -> None:
         errors: list[dict] = []
         success_count = 0
         row_count = 0
+        affected_trainee_ids: set[str] = set()  # for post-ingestion scoring
 
         logger.info("excel: iterating rows upload_id=%s", upload_id)
         for row_number, row in iter_rows(payload):
@@ -235,6 +236,7 @@ def process_upload(message: dict[str, Any]) -> None:
                     if not trainee_id:
                         raise ValueError("employee_id not found")
                     item["trainee_id"] = trainee_id
+                    affected_trainee_ids.add(str(trainee_id))
                     item.pop("employee_id", None)
                     pending.append(item)
                 elif upload_type == "STAGES":
@@ -293,6 +295,18 @@ def process_upload(message: dict[str, Any]) -> None:
             logger.info("db: upsert final batch upload_id=%s size=%s", upload_id, len(pending))
             _process_batch(db=db, upload_type=upload_type, processed=pending)
             success_count += len(pending)
+            db.flush()
+
+        # Re-compute performance classifications for every trainee whose
+        # assessment rows were touched by this upload.
+        if upload_type == "ASSESSMENTS" and affected_trainee_ids:
+            from processors.scorer import compute_classifications_for_trainees
+            scored = compute_classifications_for_trainees(db, list(affected_trainee_ids))
+            logger.info(
+                "scorer: classifications updated count=%s upload_id=%s",
+                scored,
+                upload_id,
+            )
             db.flush()
 
         logger.info(
