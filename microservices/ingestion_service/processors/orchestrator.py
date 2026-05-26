@@ -102,6 +102,31 @@ def _fetch_trainee_id_map(db) -> dict[str, Any]:
     }
 
 
+def _generate_error_report(upload_id: uuid.UUID, errors: list[dict]) -> str | None:
+    if not errors:
+        return None
+    from io import BytesIO
+
+    from openpyxl import Workbook
+
+    from storage import get_storage_client
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["row_number", "column_name", "message"])
+    for err in errors:
+        ws.append([err["row_number"], err.get("column_name"), err["message"]])
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    key = f"errors/{upload_id}/error_report.xlsx"
+    return get_storage_client().save_bytes(
+        key=key,
+        data=buf.read(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 def _insert_errors(db, upload_id: uuid.UUID, errors: list[dict]) -> None:
     if not errors:
         return
@@ -301,10 +326,19 @@ def process_upload(message: dict[str, Any]) -> None:
         # assessment rows were touched by this upload.
         if upload_type == "ASSESSMENTS" and affected_trainee_ids:
             from processors.scorer import compute_classifications_for_trainees
-            scored = compute_classifications_for_trainees(db, list(affected_trainee_ids))
+            from processors.topper_engine import compute_toppers_for_trainees
+
+            ids = list(affected_trainee_ids)
+            scored = compute_classifications_for_trainees(db, ids)
             logger.info(
                 "scorer: classifications updated count=%s upload_id=%s",
                 scored,
+                upload_id,
+            )
+            toppers = compute_toppers_for_trainees(db, ids)
+            logger.info(
+                "topper: flags created count=%s upload_id=%s",
+                toppers,
                 upload_id,
             )
             db.flush()
@@ -317,13 +351,19 @@ def process_upload(message: dict[str, Any]) -> None:
             len(errors),
         )
         _insert_errors(db, upload_id, errors)
+        error_report_url = _generate_error_report(upload_id, errors)
+        status_fields: dict[str, Any] = {
+            "row_count": row_count,
+            "success_count": success_count,
+            "error_count": len(errors),
+        }
+        if error_report_url:
+            status_fields["error_report_url"] = error_report_url
         _mark_status(
             db,
             upload_id,
             "COMPLETED",
-            row_count=row_count,
-            success_count=success_count,
-            error_count=len(errors),
+            **status_fields,
         )
         db.commit()
         logger.info("db: COMPLETED committed upload_id=%s", upload_id)

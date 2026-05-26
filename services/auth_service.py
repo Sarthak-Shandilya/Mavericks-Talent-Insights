@@ -82,5 +82,16 @@ def create_user(db: Session, body: UserCreate) -> UserRead:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="User creation failed",
         )
+    from services import audit_service
+
+    audit_service.log_action(
+        db,
+        actor=None,
+        action="user.create",
+        entity_type="user",
+        entity_id=created.id,
+        details={"email": created.email, "role": body.role},
+    )
+    db.commit()
     return user_to_read(created)
 

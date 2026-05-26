@@ -17,7 +17,16 @@ def seed_reference_data(session: Session) -> None:
     _seed_training_stage_types(session)
     _seed_streams(session)
     _seed_assessment_catalog(session)
+    _seed_automation_defaults(session)
     session.commit()
+
+
+def _seed_automation_defaults(session: Session) -> None:
+    from services.scoring_service import ensure_default_scoring_config
+    from services.topper_service import ensure_default_topper_rules
+
+    ensure_default_scoring_config(session)
+    ensure_default_topper_rules(session)
 
 
 def _seed_roles(session: Session) -> None:

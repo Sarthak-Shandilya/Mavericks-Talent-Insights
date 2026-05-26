@@ -98,6 +98,18 @@ def create_upload(
     db.commit()
     db.refresh(row)
 
+    from services import audit_service
+
+    audit_service.log_action(
+        db,
+        actor=current_user,
+        action="upload.create",
+        entity_type="upload_batch",
+        entity_id=row.id,
+        details={"upload_type": upload_type.value, "file_name": file_name},
+    )
+    db.commit()
+
     now = datetime.now(UTC).isoformat()
     message = {
         "message_id": str(uuid.uuid4()),
