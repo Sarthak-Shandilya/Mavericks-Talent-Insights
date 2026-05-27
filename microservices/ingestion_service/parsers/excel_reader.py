@@ -32,6 +32,14 @@ def _normalize_value(value: object) -> object:
     return value
 
 
+def count_data_rows(file_bytes: bytes) -> int:
+    """Count non-empty data rows (excludes header) for progress denominator."""
+    count = 0
+    for _row_number, _row in iter_rows(file_bytes):
+        count += 1
+    return count
+
+
 def iter_rows(file_bytes: bytes) -> Iterator[tuple[int, dict[str, object]]]:
     logger.info("excel_reader: load_workbook read_only bytes=%s", len(file_bytes))
     workbook = load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)

@@ -11,14 +11,18 @@ from sqlalchemy.engine.url import make_url
 
 from configs.settings import get_settings
 from db.session import SessionLocal
-from parsers.excel_reader import iter_rows
+from parsers.excel_reader import count_data_rows, iter_rows
 from processors import upserter
 from storage import get_storage_client
-from utils.db_bind import bind_sqlite_params, bind_sqlite_rows
+from utils.db_bind import bind_sqlite_params
 from utils.queue_clients import get_queue_client
 from validators.row_schemas import AssessmentRow, CompetencyRow, StageRow, TraineeMasterRow
 
 logger = logging.getLogger(__name__)
+
+
+class UploadNotFoundInWorkerDbError(RuntimeError):
+    """Raised when worker UPDATE affects 0 rows (usually API/worker DATABASE_URL mismatch)."""
 
 REQUIRED_TRAINEE_FIELDS = {
     "employee_id": ("employee_id", "employeeid", "emp_id", "employee_code", "emp_code"),
@@ -105,26 +109,40 @@ def _fetch_trainee_id_map(db) -> dict[str, Any]:
 def _generate_error_report(upload_id: uuid.UUID, errors: list[dict]) -> str | None:
     if not errors:
         return None
-    from io import BytesIO
+    try:
+        from io import BytesIO
 
-    from openpyxl import Workbook
+        from openpyxl import Workbook
 
-    from storage import get_storage_client
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["row_number", "column_name", "message"])
+        for err in errors:
+            ws.append([err["row_number"], err.get("column_name"), err["message"]])
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        key = f"errors/{upload_id}/error_report.xlsx"
+        return get_storage_client().save_bytes(
+            key=key,
+            data=buf.read(),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception:
+        logger.exception(
+            "error report generation failed upload_id=%s (completion will still proceed)",
+            upload_id,
+        )
+        return None
 
-    wb = Workbook()
-    ws = wb.active
-    ws.append(["row_number", "column_name", "message"])
-    for err in errors:
-        ws.append([err["row_number"], err.get("column_name"), err["message"]])
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    key = f"errors/{upload_id}/error_report.xlsx"
-    return get_storage_client().save_bytes(
-        key=key,
-        data=buf.read(),
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+
+def _compute_percentage(processed: int, total_rows: int, *, cap_at_99: bool = False) -> int:
+    if total_rows <= 0:
+        return 0
+    pct = int((processed / total_rows) * 100)
+    if cap_at_99:
+        return min(99, pct)
+    return min(100, pct)
 
 
 def _insert_errors(db, upload_id: uuid.UUID, errors: list[dict]) -> None:
@@ -171,7 +189,33 @@ def _mark_status(db, upload_id: uuid.UUID, status: str, **fields: Any) -> None:
         parts.append("completed_at = :completed_at")
         params["completed_at"] = datetime.now(UTC)
     stmt = text(f"UPDATE upload_batches SET {', '.join(parts)} WHERE id = :upload_id")
-    db.execute(stmt, bind_sqlite_params(params))
+    result = db.execute(stmt, bind_sqlite_params(params))
+    if result.rowcount != 1:
+        raise UploadNotFoundInWorkerDbError(
+            f"upload_id={upload_id} not found in worker database ({_safe_database_url()}). "
+            "Set worker DATABASE_URL to the same database as the API."
+        )
+
+
+def _persist_progress(
+    db,
+    upload_id: uuid.UUID,
+    *,
+    row_count: int,
+    success_count: int,
+    error_count: int,
+    percentage_completed: int,
+    status: str = "PROCESSING",
+) -> None:
+    _mark_status(
+        db,
+        upload_id,
+        status,
+        row_count=row_count,
+        success_count=success_count,
+        error_count=error_count,
+        percentage_completed=percentage_completed,
+    )
 
 
 def _process_batch(
@@ -195,32 +239,44 @@ def _process_batch(
 
 
 def process_upload(message: dict[str, Any]) -> None:
-    upload_id = uuid.UUID(message["upload_id"])
-    upload_type = str(message["upload_type"]).upper()
+    upload_id: uuid.UUID | None = None
+    upload_type: str | None = None
+    row_count = 0
+    success_count = 0
+    errors: list[dict] = []
+    percentage_completed = 0
+    total_rows = 0
+
     settings = get_settings()
     batch_size = settings.ingestion_batch_size
     storage = get_storage_client()
 
-    logger.info(
-        "ingestion start upload_id=%s upload_type=%s batch_size=%s db=%s storage=%s",
-        upload_id,
-        upload_type,
-        batch_size,
-        _safe_database_url(),
-        settings.storage_type,
-    )
-    logger.info("queue message file_url=%s", message.get("file_url"))
-
     db = SessionLocal()
     try:
+        upload_id = uuid.UUID(str(message["upload_id"]))
+        upload_type = str(message["upload_type"]).upper()
+
+        logger.info(
+            "ingestion start upload_id=%s upload_type=%s batch_size=%s db=%s storage=%s",
+            upload_id,
+            upload_type,
+            batch_size,
+            _safe_database_url(),
+            settings.storage_type,
+        )
+        logger.info("queue message file_url=%s", message.get("file_url"))
+
         logger.info("db: marking PROCESSING upload_id=%s", upload_id)
-        _mark_status(db, upload_id, "PROCESSING")
+        _mark_status(db, upload_id, "PROCESSING", percentage_completed=0)
         db.commit()
         logger.info("db: PROCESSING committed upload_id=%s", upload_id)
 
         logger.info("storage: reading file_url=%s", message["file_url"])
         payload = storage.read_bytes(url=message["file_url"])
         logger.info("storage: read %s bytes", len(payload))
+
+        total_rows = count_data_rows(payload)
+        logger.info("excel: total_data_rows=%s upload_id=%s", total_rows, upload_id)
 
         logger.info("db: loading reference maps (trainees, streams, stages, batches)")
         trainee_ids = _fetch_trainee_id_map(db)
@@ -236,9 +292,6 @@ def process_upload(message: dict[str, Any]) -> None:
         )
 
         pending: list[dict] = []
-        errors: list[dict] = []
-        success_count = 0
-        row_count = 0
         affected_trainee_ids: set[str] = set()  # for post-ingestion scoring
 
         logger.info("excel: iterating rows upload_id=%s", upload_id)
@@ -305,6 +358,13 @@ def process_upload(message: dict[str, Any]) -> None:
                 )
                 continue
 
+            processed_rows = row_count
+            percentage_completed = _compute_percentage(
+                processed=processed_rows,
+                total_rows=total_rows,
+                cap_at_99=True,
+            )
+
             if len(pending) >= batch_size:
                 logger.info(
                     "db: upsert batch upload_id=%s size=%s (batch_size limit)",
@@ -315,12 +375,44 @@ def process_upload(message: dict[str, Any]) -> None:
                 success_count += len(pending)
                 pending = []
                 db.flush()
+                _persist_progress(
+                    db,
+                    upload_id,
+                    row_count=row_count,
+                    success_count=success_count,
+                    error_count=len(errors),
+                    percentage_completed=percentage_completed,
+                )
+                db.commit()
+                logger.info(
+                    "db: progress upload_id=%s pct=%s rows=%s success=%s errors=%s",
+                    upload_id,
+                    percentage_completed,
+                    row_count,
+                    success_count,
+                    len(errors),
+                )
 
         if pending:
             logger.info("db: upsert final batch upload_id=%s size=%s", upload_id, len(pending))
             _process_batch(db=db, upload_type=upload_type, processed=pending)
             success_count += len(pending)
             db.flush()
+
+        percentage_completed = _compute_percentage(
+            processed=row_count,
+            total_rows=total_rows,
+            cap_at_99=True,
+        )
+        _persist_progress(
+            db,
+            upload_id,
+            row_count=row_count,
+            success_count=success_count,
+            error_count=len(errors),
+            percentage_completed=percentage_completed,
+        )
+        db.commit()
 
         # Re-compute performance classifications for every trainee whose
         # assessment rows were touched by this upload.
@@ -356,6 +448,7 @@ def process_upload(message: dict[str, Any]) -> None:
             "row_count": row_count,
             "success_count": success_count,
             "error_count": len(errors),
+            "percentage_completed": 100,
         }
         if error_report_url:
             status_fields["error_report_url"] = error_report_url
@@ -398,19 +491,27 @@ def process_upload(message: dict[str, Any]) -> None:
             db.rollback()
         except Exception:
             logger.warning("db: rollback failed upload_id=%s", upload_id, exc_info=True)
-        try:
-            fail_db = SessionLocal()
+        if upload_id is not None:
             try:
-                _mark_status(fail_db, upload_id, "FAILED")
-                fail_db.commit()
-                logger.info("db: FAILED status persisted upload_id=%s", upload_id)
-            finally:
-                fail_db.close()
-        except Exception:
-            logger.exception(
-                "db: could not persist FAILED for upload_id=%s (check DATABASE_URL matches API)",
-                upload_id,
-            )
+                fail_db = SessionLocal()
+                try:
+                    fail_fields: dict[str, Any] = {
+                        "percentage_completed": min(99, percentage_completed),
+                    }
+                    if row_count > 0:
+                        fail_fields["row_count"] = row_count
+                        fail_fields["success_count"] = success_count
+                        fail_fields["error_count"] = len(errors)
+                    _mark_status(fail_db, upload_id, "FAILED", **fail_fields)
+                    fail_db.commit()
+                    logger.info("db: FAILED status persisted upload_id=%s", upload_id)
+                finally:
+                    fail_db.close()
+            except Exception:
+                logger.exception(
+                    "db: could not persist FAILED for upload_id=%s (check DATABASE_URL matches API)",
+                    upload_id,
+                )
         raise
     finally:
         db.close()

@@ -56,7 +56,7 @@ def get_upload_status(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Upload not found")
-    return UploadStatusResponse.model_validate(row)
+    return upload_service.build_upload_status_response(row)
 
 
 @router.get("/templates/{upload_type}")

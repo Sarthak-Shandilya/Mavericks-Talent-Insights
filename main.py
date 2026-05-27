@@ -18,9 +18,28 @@ from configs.settings import get_settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import logging
+
+    from sqlalchemy.engine.url import make_url
+
+    from configs.settings import get_settings
     from services.bootstrap import maybe_bootstrap_admin
     from utils.database import engine
     from utils.sqlite_schema import prepare_sqlite_for_dev
+
+    settings = get_settings()
+    logger = logging.getLogger("mavericks-api")
+    try:
+        safe_db = make_url(settings.database_url).render_as_string(hide_password=True)
+    except Exception:
+        safe_db = "<invalid DATABASE_URL>"
+    logger.info(
+        "api boot db=%s queue_type=%s queue=%s storage=%s",
+        safe_db,
+        settings.queue_type,
+        settings.queue_name_ingestion,
+        settings.storage_type,
+    )
 
     prepare_sqlite_for_dev(engine)
     maybe_bootstrap_admin()

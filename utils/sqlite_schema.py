@@ -60,3 +60,7 @@ def ensure_sqlite_schema_alignment(engine: Engine) -> None:
                     "ON upload_batches (file_hash)"
                 )
             )
+        if "percentage_completed" not in cols:
+            conn.execute(
+                text("ALTER TABLE upload_batches ADD COLUMN percentage_completed INTEGER")
+            )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from sqlalchemy.engine.url import make_url
 
@@ -25,6 +26,29 @@ def _safe_database_url(url: str) -> str:
         return "<invalid DATABASE_URL>"
 
 
+def _warn_if_likely_db_mismatch(database_url: str) -> None:
+    """Warn when worker appears to use its own local sqlite DB."""
+    try:
+        url = make_url(database_url)
+    except Exception:
+        return
+    if url.get_backend_name() != "sqlite":
+        return
+    if database_url.strip() == "sqlite:///./mavericks.db":
+        logger.warning(
+            "worker DATABASE_URL=%s may point to ingestion_service/mavericks.db depending on cwd. "
+            "Use same DB as API (commonly sqlite:///../../mavericks.db).",
+            database_url,
+        )
+        return
+    db = url.database or ""
+    if db and not Path(db).is_absolute():
+        logger.warning(
+            "worker sqlite DATABASE_URL uses relative path '%s'; ensure it resolves to API DB file.",
+            db,
+        )
+
+
 def _handler(message: dict) -> None:
     uid = message.get("upload_id")
     logger.info("queue: handler invoked upload_id=%s raw_keys=%s", uid, list(message.keys()))
@@ -39,6 +63,7 @@ def _handler(message: dict) -> None:
 
 def main() -> None:
     settings = get_settings()
+    _warn_if_likely_db_mismatch(settings.database_url)
     ensure_sqlite_schema_alignment(engine)
     warn_if_sqlite_missing_core_tables(engine)
     logger.info(

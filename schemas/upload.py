@@ -24,6 +24,7 @@ class UploadStatusResponse(BaseModel):
     error_count: int | None
     template_version: str | None
     error_report_url: str | None
+    percentage_completed: int = 0
     created_at: datetime
     completed_at: datetime | None
 

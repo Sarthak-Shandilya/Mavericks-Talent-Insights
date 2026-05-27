@@ -22,6 +22,7 @@ class UploadBatch(Base):
     row_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     success_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    percentage_completed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     template_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error_report_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_by_user_id: Mapped[uuid.UUID] = mapped_column(

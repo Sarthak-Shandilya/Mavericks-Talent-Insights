@@ -19,6 +19,7 @@ from configs.upload_template_headers import (
 from models.enums import UploadStatus, UploadType
 from models.upload_audit import UploadBatch
 from models.user import User
+from schemas.upload import UploadStatusResponse
 from storage import get_storage_client
 from utils.hashing import sha256_hex
 from utils.queue_clients import get_queue_client
@@ -122,12 +123,55 @@ def create_upload(
         "requested_at": now,
     }
     settings = get_settings()
-    get_queue_client().publish(
-        queue_name=settings.queue_name_ingestion,
-        message=message,
-        message_id=message["message_id"],
-    )
+    try:
+        get_queue_client().publish(
+            queue_name=settings.queue_name_ingestion,
+            message=message,
+            message_id=message["message_id"],
+        )
+    except Exception as exc:
+        row.status = UploadStatus.FAILED.value
+        row.percentage_completed = 0
+        row.completed_at = datetime.now(UTC)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Upload saved but queue publish failed (upload_id={row.id}). "
+                "Batch marked FAILED; check ActiveMQ/Service Bus and QUEUE_TYPE settings."
+            ),
+        ) from exc
     return row
+
+
+def resolve_percentage_completed(row: UploadBatch) -> int:
+    """Return 0–100 for status API; uses persisted value or status-based fallback."""
+    if row.percentage_completed is not None:
+        pct = int(row.percentage_completed)
+        if row.status == UploadStatus.FAILED.value:
+            return min(99, pct)
+        return min(100, max(0, pct))
+
+    if row.status == UploadStatus.COMPLETED.value:
+        return 100
+    if row.status == UploadStatus.QUEUED.value:
+        return 0
+    if row.status == UploadStatus.FAILED.value:
+        if row.row_count and row.row_count > 0:
+            processed = (row.success_count or 0) + (row.error_count or 0)
+            return min(99, int(processed / row.row_count * 100))
+        return 0
+    if row.status == UploadStatus.PROCESSING.value:
+        if row.row_count and row.row_count > 0:
+            processed = (row.success_count or 0) + (row.error_count or 0)
+            return min(99, int(processed / row.row_count * 100))
+        return 0
+    return 0
+
+
+def build_upload_status_response(row: UploadBatch) -> UploadStatusResponse:
+    base = UploadStatusResponse.model_validate(row)
+    return base.model_copy(update={"percentage_completed": resolve_percentage_completed(row)})
 
 
 def get_upload(db: Session, upload_id: uuid.UUID) -> UploadBatch | None:
